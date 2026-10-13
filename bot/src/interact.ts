@@ -1,0 +1,138 @@
+// Agent → operator questions. The agent emits :::ASK blocks (see system
+// prompt); the bot renders each as a message with inline-keyboard buttons
+// and forwards the tapped/typed answer back into the same opencode session.
+import { randomBytes } from "node:crypto";
+
+export interface AskQuestion {
+  question: string;
+  options: string[];
+}
+
+const ASK_RE = /:::ASK\s*\n([\s\S]*?)\n:::/g;
+const MAX_BLOCKS = 3;
+const MAX_OPTIONS = 6;
+
+export function parseAskBlocks(text: string): AskQuestion[] {
+  const questions: AskQuestion[] = [];
+  ASK_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = ASK_RE.exec(text)) !== null && questions.length < MAX_BLOCKS) {
+    const body = match[1];
+    let question = "";
+    const options: string[] = [];
+    for (const rawLine of body.split("\n")) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      if (/^Q\s*:/i.test(line)) {
+        question = line.replace(/^Q\s*:\s*/i, "").trim();
+      } else if (/^[-*•]\s+/.test(line)) {
+        if (options.length < MAX_OPTIONS) options.push(line.replace(/^[-*•]\s+/, "").trim().slice(0, 80));
+      } else if (!question) {
+        question = line.slice(0, 200);
+      }
+    }
+    if (question) questions.push({ question: question.slice(0, 300), options });
+  }
+  return questions;
+}
+
+/** Remove ASK blocks from the text shown in chat (they're rendered as buttons). */
+export function stripAskBlocks(text: string): string {
+  ASK_RE.lastIndex = 0;
+  return text.replace(ASK_RE, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+export interface SendFile {
+  filePath: string;
+  caption: string;
+}
+
+const SEND_RE = /:::SEND\s*\n([\s\S]*?)\n:::/g;
+
+/**
+ * Explicit media sends. The agent emits:
+ *   :::SEND
+ *   /absolute/path/to/file.png | optional caption
+ *   /absolute/path/to/report.pdf
+ *   :::
+ * One file per line; caption after `|` is optional.
+ */
+export function parseSendBlocks(text: string): SendFile[] {
+  const files: SendFile[] = [];
+  SEND_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = SEND_RE.exec(text)) !== null && files.length < 5) {
+    for (const rawLine of match[1].split("\n")) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith("#")) continue;
+      const [p, ...captionParts] = line.split("|");
+      const filePath = p.trim();
+      if (!filePath.startsWith("/")) continue;
+      files.push({ filePath, caption: captionParts.join("|").trim().slice(0, 200) });
+      if (files.length >= 5) break;
+    }
+  }
+  return files;
+}
+
+/** Remove SEND blocks from the text shown in chat (they're delivered as media). */
+export function stripSendBlocks(text: string): string {
+  SEND_RE.lastIndex = 0;
+  return text.replace(SEND_RE, "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * AI-chosen reaction. The agent ends its reply with a final line:
+ *   REACT: 🔥
+ * Only the LAST non-empty line counts. Returns the emoji + cleaned text.
+ * (Telegram only accepts its native reaction set — invalid ones are
+ * rejected by the API call, which fails silently by design.)
+ */
+export function parseReactLine(text: string): { emoji?: string; cleaned: string } {
+  const lines = text.split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].trim()) continue;
+    const match = /^REACT:\s*(\S+)\s*$/.exec(lines[i].trim());
+    if (!match) return { cleaned: text };
+    const emoji = match[1].slice(0, 16);
+    lines.splice(i, 1);
+    return { emoji, cleaned: lines.join("\n").replace(/\n{3,}/g, "\n\n").trim() };
+  }
+  return { cleaned: text };
+}
+
+export interface PendingAnswer {
+  chatId: number;
+  sessionId?: string;
+  question: string;
+  option?: string;
+  createdAt: number;
+}
+
+const PENDING_TTL_MS = 30 * 60 * 1000;
+
+/** Registry mapping short callback tokens → pending answers. */
+export class PendingQuestions {
+  private pending = new Map<string, PendingAnswer>();
+
+  add(answer: PendingAnswer): string {
+    this.sweep();
+    const token = randomBytes(6).toString("hex");
+    this.pending.set(token, answer);
+    return token;
+  }
+
+  take(token: string): PendingAnswer | undefined {
+    const found = this.pending.get(token);
+    if (found) this.pending.delete(token);
+    if (found && Date.now() - found.createdAt > PENDING_TTL_MS) return undefined;
+    return found;
+  }
+
+    private sweep(): void {
+    const now = Date.now();
+    for (const [key, value] of this.pending) {
+      if (now - value.createdAt > PENDING_TTL_MS) this.pending.delete(key);
+    }
+  }
+}
