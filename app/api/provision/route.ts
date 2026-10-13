@@ -18,8 +18,8 @@ export async function POST() {
   const warnings: string[] = [];
   if (!hasAnyModelKey(env)) {
     warnings.push(
-      "No model key set (OPENCODE_API_KEY / ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY). " +
-        "Setup continues — anonymous free models sometimes work — but set one if the brain stays silent.",
+      "No paid model keys set — fine: the default free model needs no key. " +
+        "Set OPENCODE_API_KEY (or a provider key) only if you want non-free models.",
     );
   }
   if (!env.sandboxToken) {

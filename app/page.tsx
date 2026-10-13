@@ -136,7 +136,7 @@ export default function Home() {
             <h3 style={{ margin: "0 0 8px" }}>Environment</h3>
             <div>TG_BOT_TOKEN <span style={pill(!!env?.tgBotToken)}>{env?.tgBotToken ? "set" : "missing"}</span></div>
             <div style={{ marginTop: 6 }}>
-              Model keys:{" "}
+              Extra model keys (optional — free models need none):{" "}
               {env?.modelKeys?.map((k) => (
                 <span key={k.label} style={{ ...pill(k.ok), marginRight: 4 }}>
                   {k.ok ? "✓" : "✗"} {k.label}

@@ -40,7 +40,7 @@ export function loadDeployEnv(): DeployEnv {
   };
 }
 
-/** Which model-key paths are available (for UI + validation). */
+/** Which optional (paid/non-free) model keys are present. Free opencode/* models need none. */
 export function modelKeyStatus(env: DeployEnv): { label: string; ok: boolean }[] {
   return [
     { label: "OPENCODE_API_KEY (Zen gateway)", ok: !!env.opencodeApiKey },
@@ -53,7 +53,6 @@ export function modelKeyStatus(env: DeployEnv): { label: string; ok: boolean }[]
 export function hasAnyModelKey(env: DeployEnv): boolean {
   return !!(env.opencodeApiKey || env.anthropicKey || env.openaiKey || env.geminiKey);
 }
-
 /** Public repo this HQ is deployed from — sandboxes git-clone it (must stay public). */
 export function botRepoUrl(): string {
   return process.env.BOT_REPO_URL || "https://github.com/Raunak-dev-18/tg-bot-on-vercel.git";
